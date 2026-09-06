@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="es" class="dark h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel de Monitoreo Satelital | SatLocate LATAM</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] },
+          colors: { slateDeep: '#0b132b' }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Mapbox GL JS -->
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet" />
+
+  <style>
+    body, html { height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #0b132b; color: #f8fafc; }
+    #map { width: 100%; height: 100%; position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
+    
+    .glass-panel {
+      background: rgba(11, 19, 43, 0.88);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    /* Tactical Pulsing Map Marker */
+    .satellite-marker {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(6, 182, 212, 0.3);
+      border: 2px solid #06b6d4;
+      box-shadow: 0 0 20px #06b6d4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      cursor: pointer;
+    }
+    .satellite-marker::before {
+      content: '';
+      position: absolute;
+      inset: -12px;
+      border-radius: 50%;
+      border: 2px solid rgba(6, 182, 212, 0.6);
+      animation: pulseMarker 1.8s infinite ease-out;
+    }
+    .satellite-marker-inner {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #06b6d4;
+      box-shadow: 0 0 10px #06b6d4;
+    }
+    @keyframes pulseMarker {
+      0% { transform: scale(0.5); opacity: 1; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+  </style>
+</head>
+<body class="h-full font-sans antialiased relative">
+
+  <!-- Map Container -->
+  <div id="map"></div>
+
+  <!-- Top Floating Header Bar -->
+  <header class="absolute top-4 left-4 right-4 z-20 max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 p-4 rounded-2xl glass-panel shadow-2xl border border-cyan-500/20">
+    
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400 flex items-center justify-center text-cyan-400">
+        <i data-lucide="satellite" class="w-5 h-5"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-extrabold text-white text-base">Panel de Monitoreo Satelital</h1>
+          <span id="sessionStatusBadge" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+            ESPERANDO PAGO
+          </span>
+        </div>
+        <p class="text-xs text-slate-400">ID de Sesión: <span id="trackingIdDisplay" class="font-mono text-cyan-400 font-semibold"></span></p>
+      </div>
+    </div>
+
+    <!-- Active Subscription Info & Cancel Button -->
+    <div class="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
+      
+      <div id="subStatusBox" class="hidden text-xs bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl text-slate-300 flex items-center gap-2">
+        <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+        <span>Suscripción: <strong id="subPlanText" class="text-white">Trial 24h + $10/mes</strong></span>
+      </div>
+
+      <!-- Cancel Subscription Button -->
+      <button 
+        id="openCancelModalBtn" 
+        class="bg-slate-900 hover:bg-red-950/80 text-red-400 hover:text-red-300 border border-red-500/30 font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer"
+      >
+        <i data-lucide="user-x" class="w-4 h-4"></i>
+        <span>Cancelar Suscripción</span>
+      </button>
+
+    </div>
+
+  </header>
+
+  <!-- Left Sidebar Info Card -->
+  <aside class="absolute top-28 left-4 z-20 w-80 max-w-[calc(100vw-2rem)] glass-panel rounded-2xl p-5 shadow-2xl border border-slate-800 space-y-4">
+    
+    <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+      <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300">Detalles de la Solicitud</h2>
+      <span class="relative flex h-2.5 w-2.5">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
+      </span>
+    </div>
+
+    <!-- Phone Info -->
+    <div>
+      <span class="text-[11px] font-semibold text-slate-400 block uppercase">Línea Objetivo</span>
+      <span id="targetPhoneText" class="text-sm font-extrabold text-white font-mono">Cargando...</span>
+    </div>
+
+    <!-- Message Info -->
+    <div>
+      <span class="text-[11px] font-semibold text-slate-400 block uppercase">Mensaje Personalizado</span>
+      <p id="targetMessageText" class="text-xs text-slate-300 italic bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 mt-1">
+        Cargando...
+      </p>
+    </div>
+
+    <!-- Coordinates Display -->
+    <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5 font-mono text-xs">
+      <div class="text-slate-400">Latitud: <span id="coordLat" class="text-cyan-400 font-bold">--</span></div>
+      <div class="text-slate-400">Longitud: <span id="coordLng" class="text-cyan-400 font-bold">--</span></div>
+      <div class="text-slate-400">Precisión: <span id="coordAcc" class="text-emerald-400 font-bold">--</span></div>
+      <div class="text-slate-500 text-[10px] pt-1">Última sincro: <span id="coordTime">Esperando señal...</span></div>
+    </div>
+
+    <!-- Sandbox Testing Controls (Visible if sandbox mode active) -->
+    <div id="sandboxControls" class="hidden bg-cyan-950/40 border border-cyan-500/30 p-3 rounded-xl space-y-2">
+      <div class="text-[11px] font-bold text-cyan-300 flex items-center gap-1.5">
+        <i data-lucide="flask-conical" class="w-4 h-4 text-cyan-400"></i>
+        <span>Pruebas Sandbox (Modo Demo)</span>
+      </div>
+      
+      <button 
+        id="simulatePaymentBtn"
+        class="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+      >
+        <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+        <span>Simular Pago Exitoso & SMS</span>
+      </button>
+
+      <a 
+        id="openTrackUrlBtn"
+        target="_blank" 
+        class="w-full bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-semibold text-[11px] py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 block text-center"
+      >
+        <i data-lucide="external-link" class="w-3.5 h-3.5 text-cyan-400"></i>
+        <span>Abrir Enlace SMS del Destinatario</span>
+      </a>
+    </div>
+
+  </aside>
+
+  <!-- Modal: Confirmar Cancelación de Suscripción -->
+  <div id="cancelModal" class="fixed inset-0 bg-slateDeep/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="glass-panel max-w-md w-full rounded-3xl p-6 sm:p-8 border border-red-500/30 text-center relative shadow-2xl">
+      
+      <div class="w-14 h-14 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 mx-auto mb-4">
+        <i data-lucide="alert-triangle" class="w-7 h-7"></i>
+      </div>
+
+      <h3 class="text-xl font-extrabold text-white mb-2">¿Cancelar Suscripción Mensual?</h3>
+      <p class="text-xs text-slate-300 leading-relaxed mb-6">
+        Al confirmar, se dará de baja inmediata la renovación automática de <strong>$10.00 USD/mes</strong>. Mantendrá acceso completo durante las 24 horas del periodo de prueba vigente.
+      </p>
+
+      <div class="flex items-center gap-3">
+        <button 
+          id="closeCancelModalBtn" 
+          class="w-1/2 bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold py-3 rounded-xl text-xs transition-colors cursor-pointer"
+        >
+          Mantener Suscripción
+        </button>
+
+        <button 
+          id="confirmCancelSubBtn" 
+          class="w-1/2 bg-red-600 hover:bg-red-500 text-white font-black py-3 rounded-xl text-xs shadow-lg shadow-red-600/30 transition-colors cursor-pointer"
+        >
+          Sí, Cancelar Cobro
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Dashboard Script -->
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      lucide.createIcons();
+
+      // Extraer trackingId del path (ej: /dashboard/sat_1234) o query string
+      const pathParts = window.location.pathname.split('/');
+      let trackingId = pathParts[pathParts.length - 1];
+      if (trackingId === 'dashboard.html' || !trackingId || trackingId === 'dashboard') {
+        const urlParams = new URLSearchParams(window.location.search);
+        trackingId = urlParams.get('id') || 'sat_demo';
+      }
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const isSandboxMode = urlParams.get('sandbox') === 'true';
+
+      // Elementos DOM
+      const trackingIdDisplay = document.getElementById('trackingIdDisplay');
+      const sessionStatusBadge = document.getElementById('sessionStatusBadge');
+      const subStatusBox = document.getElementById('subStatusBox');
+      const subPlanText = document.getElementById('subPlanText');
+      const targetPhoneText = document.getElementById('targetPhoneText');
+      const targetMessageText = document.getElementById('targetMessageText');
+      const coordLat = document.getElementById('coordLat');
+      const coordLng = document.getElementById('coordLng');
+      const coordAcc = document.getElementById('coordAcc');
+      const coordTime = document.getElementById('coordTime');
+
+      const sandboxControls = document.getElementById('sandboxControls');
+      const simulatePaymentBtn = document.getElementById('simulatePaymentBtn');
+      const openTrackUrlBtn = document.getElementById('openTrackUrlBtn');
+
+      const openCancelModalBtn = document.getElementById('openCancelModalBtn');
+      const cancelModal = document.getElementById('cancelModal');
+      const closeCancelModalBtn = document.getElementById('closeCancelModalBtn');
+      const confirmCancelSubBtn = document.getElementById('confirmCancelSubBtn');
+
+      trackingIdDisplay.textContent = trackingId;
+      openTrackUrlBtn.href = `/track/${trackingId}`;
+
+      // Configuración de Mapbox GL JS
+      let mapboxToken = 'pk.eyJ1IjoiZGV2LXNhdGxvY2F0ZSIsImEiOiJjbTAxMm5vM3gwMG5sMmxzYTY3bThhNzRzIn0.sample_token';
+      try {
+        const configRes = await fetch('/api/config');
+        const configData = await configRes.json();
+        if (configData.mapboxToken) mapboxToken = configData.mapboxToken;
+      } catch (e) {}
+
+      mapboxgl.accessToken = mapboxToken;
+
+      const map = new mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/mapbox/dark-v11',
+        center: [-74.0721, 4.7110], // Colombia por defecto (Bogotá)
+        zoom: 5,
+        pitch: 35
+      });
+
+      map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+
+      let currentMarker = null;
+      let hasFlownToLocation = false;
+
+      // Crear DOM Element para Marcador de Pulso Satelital
+      function createSatelliteMarkerElement() {
+        const el = document.createElement('div');
+        el.className = 'satellite-marker';
+        const inner = document.createElement('div');
+        inner.className = 'satellite-marker-inner';
+        el.appendChild(inner);
+        return el;
+      }
+
+      // Polling cada 3 segundos a /api/status/:trackingId
+      async function pollStatus() {
+        try {
+          const res = await fetch(`/api/status/${trackingId}`);
+          if (!res.ok) return;
+
+          const data = await res.json();
+          updateDashboardUI(data);
+
+        } catch (err) {
+          console.error('Error en polling status:', err);
+        }
+      }
+
+      function updateDashboardUI(data) {
+        // Teléfono y mensaje
+        if (data.phone) targetPhoneText.textContent = data.phone;
+        if (data.message) targetMessageText.textContent = `"${data.message}"`;
+
+        // Suscripción Plan
+        if (data.subscriptionActive) {
+          subStatusBox.classList.remove('hidden');
+          subPlanText.textContent = data.subscriptionPlan || 'Trial 24h + $10/mes';
+        } else {
+          subStatusBox.classList.remove('hidden');
+          subStatusBox.innerHTML = `<i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i><span class="text-red-300 font-bold">Suscripción Cancelada</span>`;
+          openCancelModalBtn.classList.add('hidden');
+          lucide.createIcons();
+        }
+
+        // Estado Badge
+        if (data.status === 'PENDING') {
+          sessionStatusBadge.className = "text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40";
+          sessionStatusBadge.textContent = "ESPERANDO PAGO";
+          sandboxControls.classList.remove('hidden');
+        } else if (data.status === 'PAID') {
+          sessionStatusBadge.className = "text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40";
+          sessionStatusBadge.textContent = "SMS ENVIADO • ESPERANDO GPS";
+          sandboxControls.classList.remove('hidden');
+        } else if (data.status === 'TRACKED') {
+          sessionStatusBadge.className = "text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+          sessionStatusBadge.textContent = "UBICACIÓN CONFIRMADA";
+        }
+
+        // Si existen Coordenadas
+        if (data.coordinates && data.coordinates.latitude && data.coordinates.longitude) {
+          const lat = data.coordinates.latitude;
+          const lng = data.coordinates.longitude;
+          const acc = data.coordinates.accuracy || 10;
+
+          coordLat.textContent = lat.toFixed(6);
+          coordLng.textContent = lng.toFixed(6);
+          coordAcc.textContent = `±${Math.round(acc)}m`;
+          coordTime.textContent = new Date(data.coordinates.timestamp).toLocaleTimeString();
+
+          // Colocar/Actualizar Marcador Mapbox
+          if (!currentMarker) {
+            const markerEl = createSatelliteMarkerElement();
+            currentMarker = new mapboxgl.Marker({ element: markerEl })
+              .setLngLat([lng, lat])
+              .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(`
+                <div class="p-2 text-slate-900 font-sans">
+                  <strong class="text-cyan-600 block text-xs uppercase font-extrabold">Objetivo Localizado</strong>
+                  <div class="text-xs font-mono font-bold mt-1">Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}</div>
+                  <div class="text-[10px] text-slate-500">Precisión: ±${Math.round(acc)}m</div>
+                </div>
+              `))
+              .addTo(map);
+          } else {
+            currentMarker.setLngLat([lng, lat]);
+          }
+
+          // Animar Cámara con map.flyTo
+          if (!hasFlownToLocation) {
+            map.flyTo({
+              center: [lng, lat],
+              zoom: 15,
+              pitch: 45,
+              speed: 1.2,
+              curve: 1.4,
+              essential: true
+            });
+            hasFlownToLocation = true;
+          }
+        }
+      }
+
+      // Ejecutar primer polling e intervalo de 3s
+      pollStatus();
+      setInterval(pollStatus, 3000);
+
+      // Simular Pago Sandbox
+      if (simulatePaymentBtn) {
+        simulatePaymentBtn.addEventListener('click', async () => {
+          simulatePaymentBtn.disabled = true;
+          try {
+            const res = await fetch(`/api/simulate-payment/${trackingId}`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+              pollStatus();
+            }
+          } catch (e) {
+            console.error('Error en simulación:', e);
+          } finally {
+            simulatePaymentBtn.disabled = false;
+          }
+        });
+      }
+
+      // Modales de Cancelación de Suscripción
+      openCancelModalBtn.addEventListener('click', () => {
+        cancelModal.classList.remove('hidden');
+      });
+
+      closeCancelModalBtn.addEventListener('click', () => {
+        cancelModal.classList.add('hidden');
+      });
+
+      confirmCancelSubBtn.addEventListener('click', async () => {
+        confirmCancelSubBtn.disabled = true;
+        confirmCancelSubBtn.textContent = "Cancelando...";
+
+        try {
+          const res = await fetch('/api/subscription/cancel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trackingId })
+          });
+          const data = await res.json();
+
+          if (data.success) {
+            alert('Suscripción cancelada exitosamente.');
+            cancelModal.classList.add('hidden');
+            pollStatus();
+          } else {
+            alert('No se pudo cancelar la suscripción.');
+          }
+        } catch (err) {
+          console.error('Error al cancelar suscripción:', err);
+          alert('Error conectando con el servidor.');
+        } finally {
+          confirmCancelSubBtn.disabled = false;
+          confirmCancelSubBtn.textContent = "Sí, Cancelar Cobro";
+        }
+      });
+
+    });
+  </script>
+</body>
+</html>
